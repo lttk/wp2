@@ -28,7 +28,7 @@ library(ipw)
 library(stats)
 options(dplyr.summarise.inform = FALSE)
 library(gamlss)
-source("SVall.R")
+source("/work/ttkle/wp2/SVall.R")
 
 shift_left <- function(row) {
   vals <- row[!is.na(row)]

@@ -30,11 +30,11 @@ library(data.table)
 library(tidyr)
 library(brant)
 library(broom)
-source("wp2 - west.R")
+source("/work/ttkle/wp2/wp2 - west.R")
 
-df = read.csv("mtx/fin_lgn_tnf_upmed_csDMARDs_AG3.csv")
-df1 = read.csv("mtx/fin_lgn_tnf_upmed_syscorti_AG3.csv")
-ori = read.csv("mtx/fin_lgn_semicat_comp2_tnf_conti_AG3_sum.csv")
+df = read.csv("/work/ttkle/wp2/mtx/fin_lgn_tnf_upmed_csDMARDs_AG3.csv")
+df1 = read.csv("/work/ttkle/wp2/mtx/fin_lgn_tnf_upmed_syscorti_AG3.csv")
+ori = read.csv("/work/ttkle/wp2/mtx/fin_lgn_semicat_comp2_tnf_conti_AG3_sum.csv")
 ori = merge(ori,df[,c('id_patient','t','lgn_aza','lgn_mmf','lgn_mer','lgn_hdcq','lgn_lfnm','lgn_sfsl')],by=c('id_patient','t'),all.x = TRUE)
 ori = merge(ori,df1[,c('id_patient','t','lgn_syscorti')],by=c('id_patient','t'),all.x = TRUE)
 ori = ori%>%drop_na()
@@ -46,6 +46,7 @@ for (i in 1:2) {
   ori[,paste0('comp_otc_',i)] = ori$comp_otc
   ori[,paste0('typ_cen_',i)] = ori$typ_cen
   ori[,paste0('typ_otc_',i)] = ori$typ_otc
+  ori[,paste0('mask_cen_',i)] = ori$mask_cen
   if (i==1) {
     ori$comp_cen_1[ori$typ_cen_1<3] = 0
     ori$comp_cen_1[ori$typ_cen_1==5&ori$time==360] = 0
@@ -81,9 +82,10 @@ for (col in var_y) {
   ori[ori[,col]==0,col] = 0
 }
 ori[,var_y] = ori[,var_y]/10
+#write.csv(ori, 'mtx/fin_lgn_semicat_comp2_tnf_AG3_des.csv')
 t.gap = 3
 idx=0
-if (FALSE) {
+if (FALSE){
 for (t in unique(ori$t)) {
   print(t)
   for (col in var_y) {
@@ -200,11 +202,11 @@ for (col in var_y) {
 }
 
 hr = list()
+ard = list()
 for (treat in var_y) {
     df[,paste(treat,'deltacat',sep='_')] = factor(df[,paste(treat,'deltacat',sep='_')], levels = c("0","1","2"))
     for (col in c(paste(treat,c(paste0("neg",c(0,1,2,3))),sep='_'))) {
-        df[,col] = factor(df[,col], levels = c("0","1","2"))
-    }
+        df[,col] = factor(df[,col], levels = c("0","1","2"))}
     for (j in 1:2) {    
       mod.hr.main = coxph(as.formula(paste0('Surv(tstart, tstop, comp_otc_',j,') ~ ',paste(treat,"neg0",sep='_'),
                                                                               ' + ',paste(treat,"delta2",sep='_'),
@@ -218,6 +220,56 @@ for (treat in var_y) {
       hr.main = c(summary(mod.hr.main)$coef[,"exp(coef)"])
       hr.cat = c(summary(mod.hr.cat)$coef[,"exp(coef)"])
       hr[[paste(treat,j,sep='_')]] = do.call(rbind,list(hr[[paste(treat,j,sep='_')]],c(hr.main,hr.cat)))
+      # ard
+      v_neg0   <- paste(treat, "neg0", sep='_')
+      v_delta1 <- paste(treat, "delta1", sep='_')
+      v_delta2 <- paste(treat, "delta2", sep='_')
+      
+      df.full <- expand.grid(id_patient = unique(df$id_patient), interval = 1:4) %>%
+                    left_join(df %>% group_by(id_patient) %>% slice(1) %>% select(-c(tstart, tstop, all_of(v_neg0), all_of(v_delta1), all_of(v_delta2))), by = "id_patient") %>%
+                    mutate(tstart = (interval - 1) * 90,
+                          tstop = interval * 90,
+                          !!v_neg0 := factor("2", levels=c("0","1","2")),
+                          !!v_delta1 := 0,
+                          !!v_delta2 := interval - 1)
+      df.full$cum_haz <- predict(mod.hr.main, newdata = df.full, type = "expected")
+      s2.365 <- df.full %>%
+        group_by(id_patient) %>%
+        summarise(total_H = sum(cum_haz)) %>%
+        summarise(mean_S = mean(exp(-total_H))) %>%
+        pull(mean_S)
+      
+      df.partial <- expand.grid(id_patient = unique(df$id_patient), interval = 1:4) %>%
+        left_join(df %>% group_by(id_patient) %>% slice(1) %>% select(-c(tstart, tstop, all_of(v_neg0), all_of(v_delta1), all_of(v_delta2))), by = "id_patient") %>%
+        mutate(tstart = (interval - 1) * 90,
+               tstop = interval * 90,
+               !!v_neg0 := factor("1", levels=c("0","1","2")),
+               !!v_delta1 := interval - 1,
+               !!v_delta2 := 0)
+      df.partial$cum_haz <- predict(mod.hr.main, newdata = df.partial, type = "expected")
+      s1.365 <- df.partial %>%
+        group_by(id_patient) %>%
+        summarise(total_H = sum(cum_haz)) %>%
+        summarise(mean_S = mean(exp(-total_H))) %>%
+        pull(mean_S)
+      
+      df.non <- expand.grid(id_patient = unique(df$id_patient), interval = 1:4) %>%
+                  left_join(df %>% group_by(id_patient) %>% slice(1) %>% select(-c(tstart, tstop, all_of(v_neg0), all_of(v_delta1), all_of(v_delta2))), by = "id_patient") %>%
+                  mutate(tstart = (interval - 1) * 90,
+                        tstop = interval * 90,
+                        !!v_neg0 := factor("0", levels=c("0","1","2")),
+                        !!v_delta1 := 0,
+                        !!v_delta2 := 0)
+      df.non$cum_haz <- predict(mod.hr.main, newdata = df.non, type = "expected")
+      s0.365 <- df.non %>%
+        group_by(id_patient) %>%
+        summarise(total_H = sum(cum_haz)) %>%
+        summarise(mean_S = mean(exp(-total_H))) %>%
+        pull(mean_S)
+      
+      ard.2.365 <- (1-s2.365) - (1-s0.365)
+      ard.1.365 <- (1-s1.365) - (1-s0.365)
+      ard[[paste(treat,j,sep='_')]] = do.call(rbind,list(ard[[paste(treat,j,sep='_')]],c(ard.2.365,ard.1.365)))
     }
 }
 
@@ -322,6 +374,57 @@ for (phase in 1:n_phase) {
         hr.main = c(summary(mod.hr.main)$coef[,"exp(coef)"])
         hr.cat = c(summary(mod.hr.cat)$coef[,"exp(coef)"])
         hr[[paste(treat,k,sep='_')]] = do.call(rbind,list(hr[[paste(treat,k,sep='_')]],c(hr.main,hr.cat)))
+        # ard
+        v_neg0   <- paste(treat, "neg0", sep='_')
+        v_delta1 <- paste(treat, "delta1", sep='_')
+        v_delta2 <- paste(treat, "delta2", sep='_')
+        
+        df.full <- expand.grid(id_patient = unique(df$id_patient), interval = 1:4) %>%
+                      left_join(df %>% group_by(id_patient) %>% slice(1) %>% select(-c(tstart, tstop, all_of(v_neg0), all_of(v_delta1), all_of(v_delta2))), by = "id_patient") %>%
+                      mutate(tstart = (interval - 1) * 90,
+                            tstop = interval * 90,
+                            !!v_neg0 := factor("2", levels=c("0","1","2")),
+                            !!v_delta1 := 0,
+                            !!v_delta2 := interval - 1)
+        df.full$cum_haz <- predict(mod.hr.main, newdata = df.full, type = "expected")
+        s2.365 <- df.full %>%
+          group_by(id_patient) %>%
+          summarise(total_H = sum(cum_haz)) %>%
+          summarise(mean_S = mean(exp(-total_H))) %>%
+          pull(mean_S)
+        
+        df.partial <- expand.grid(id_patient = unique(df$id_patient), interval = 1:4) %>%
+          left_join(df %>% group_by(id_patient) %>% slice(1) %>% select(-c(tstart, tstop, all_of(v_neg0), all_of(v_delta1), all_of(v_delta2))), by = "id_patient") %>%
+          mutate(tstart = (interval - 1) * 90,
+                tstop = interval * 90,
+                !!v_neg0 := factor("1", levels=c("0","1","2")),
+                !!v_delta1 := interval - 1,
+                !!v_delta2 := 0)
+        df.partial$cum_haz <- predict(mod.hr.main, newdata = df.partial, type = "expected")
+        s1.365 <- df.partial %>%
+          group_by(id_patient) %>%
+          summarise(total_H = sum(cum_haz)) %>%
+          summarise(mean_S = mean(exp(-total_H))) %>%
+          pull(mean_S)
+        
+        df.non <- expand.grid(id_patient = unique(df$id_patient), interval = 1:4) %>%
+                    left_join(df %>% group_by(id_patient) %>% slice(1) %>% select(-c(tstart, tstop, all_of(v_neg0), all_of(v_delta1), all_of(v_delta2))), by = "id_patient") %>%
+                    mutate(tstart = (interval - 1) * 90,
+                          tstop = interval * 90,
+                          !!v_neg0 := factor("0", levels=c("0","1","2")),
+                          !!v_delta1 := 0,
+                          !!v_delta2 := 0)
+        df.non$cum_haz <- predict(mod.hr.main, newdata = df.non, type = "expected")
+        s0.365 <- df.non %>%
+          group_by(id_patient) %>%
+          summarise(total_H = sum(cum_haz)) %>%
+          summarise(mean_S = mean(exp(-total_H))) %>%
+          pull(mean_S)
+        
+        ard.2.365 <- (1-s2.365) - (1-s0.365)
+        ard.1.365 <- (1-s1.365) - (1-s0.365)
+        ard[[paste(treat,j,sep='_')]] = do.call(rbind,list(ard[[paste(treat,j,sep='_')]],c(ard.2.365,ard.1.365)))
+        
         }
       }
   }
@@ -330,23 +433,40 @@ for (phase in 1:n_phase) {
   val.hr = sapply(exx, function(i) hr[[i]][1,])
   p.value = sapply(exx, function(i) 2 * exp(pnorm(abs(log(hr[[i]][1,]) / apply(log(hr[[i]]),2,sd)), lower.tail = FALSE, log.p = TRUE) ) )
   
-  output_ = list(as.data.frame(val.hr),as.data.frame(ci.hr),as.data.frame(p.value))
+  ci.ard =  sapply(exx, function(i) apply(ard[[i]], 2, quantile, probs = c(0.025,0.50,0.975), na.rm = TRUE ))
+  val.ard = sapply(exx, function(i) ard[[i]][1,])
+  p.value.ard = sapply(exx, function(i) 2 * exp(pnorm(abs(log(ard[[i]][1,]) / apply(log(ard[[i]]),2,sd)), lower.tail = FALSE, log.p = TRUE) ) )
+  
+  hr_output_ = list(as.data.frame(val.hr),as.data.frame(ci.hr),as.data.frame(p.value))
+  ard_output_ = list(as.data.frame(val.ard),as.data.frame(ci.ard),as.data.frame(p.value.ard))
   wb <- createWorkbook()
   for (r in names(hr)) {
     addWorksheet(wb, paste0(r)) 
     writeData(wb, paste0(r), as.data.frame(hr[[r]]))
   }
-  
-  addWorksheet(wb, paste("results_"))
+  for (r in names(ard)) {
+    addWorksheet(wb, paste0(r,"_ard")) 
+    writeData(wb, paste0(r,"_ard"), as.data.frame(ard[[r]]))
+  }
+  saveWorkbook(wb, "/work/ttkle/wp2/raw_out_.xlsx", overwrite = TRUE)
+  wbr <- createWorkbook()
+  addWorksheet(wbr, paste("hr_results_"))
   # start row counter
   row_start <- 1
-  for(o in seq_along(output_)) {
-    if (is.null(output_[[o]])) next
-    writeData(wb, paste("results_"), output_[[o]], startRow = row_start)
-    row_start <- row_start + nrow(output_[[o]]) + 2  # leave blank row between
+  for(o in seq_along(hr_output_)) {
+    if (is.null(hr_output_[[o]])) next
+    writeData(wbr, paste("hr_results_"), hr_output_[[o]], startRow = row_start)
+    row_start <- row_start + nrow(hr_output_[[o]]) + 2  # leave blank row between
   }
-
-  saveWorkbook(wb, "mtx/result/out_.xlsx", overwrite = TRUE)
+  addWorksheet(wbr, paste("ard_results_"))
+  # start row counter
+  row_start <- 1
+  for(o in seq_along(ard_output_)) {
+    if (is.null(ard_output_[[o]])) next
+    writeData(wbr, paste("ard_results_"), ard_output_[[o]], startRow = row_start)
+    row_start <- row_start + nrow(ard_output_[[o]]) + 2  # leave blank row between
+  }
+  saveWorkbook(wbr, "/work/ttkle/wp2/out_.xlsx", overwrite = TRUE)
 }
 
 
