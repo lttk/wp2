@@ -217,6 +217,7 @@ for (col in var_y) {
 }
 
 hr = list()
+ard = list()
 for (treat in var_y) {
     df[,paste(treat,'deltacat',sep='_')] = factor(df[,paste(treat,'deltacat',sep='_')], levels = c("0","1","2"))
     for (col in c(paste(treat,c(paste0("neg",c(0,1,2,3))),sep='_'))) {
