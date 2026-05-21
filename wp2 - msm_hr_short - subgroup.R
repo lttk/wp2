@@ -439,7 +439,7 @@ for (phase in 1:n_phase) {
         
         ard.2.365 <- (1-s2.365) - (1-s0.365)
         ard.1.365 <- (1-s1.365) - (1-s0.365)
-        ard[[paste(treat,j,sep='_')]] = do.call(rbind,list(ard[[paste(treat,j,sep='_')]],c(ard.2.365,ard.1.365)))
+        ard[[paste(treat,k,sep='_')]] = do.call(rbind,list(ard[[paste(treat,k,sep='_')]],c(ard.2.365,ard.1.365)))
         }
       }
   }
