@@ -216,6 +216,13 @@ for (treat in var_y) {
     ard[[paste(treat,j,sep='_')]] = do.call(rbind,list(ard[[paste(treat,j,sep='_')]],c(ard.2.365)))
   }
 }
+
+#################################
+# BOOTSTRAP
+#################################
+
+### update: paralell loop
+### fix: better names for iter var
 n_boot = 999
 n_phase = 10
 for (phase in 1:n_phase) {
@@ -337,7 +344,7 @@ for (phase in 1:n_phase) {
 
   ci.ard =  sapply(exx, function(i) quantile(ard[[i]], probs = c(0.025,0.50,0.975), na.rm = TRUE ))
   val.ard = sapply(exx, function(i) ard[[i]][1,])
-  p.value.ard = sapply(exx, function(i) 2 * exp(pnorm(abs(log(ard[[i]][1,]) / sd(log(ard[[i]]))), lower.tail = FALSE, log.p = TRUE) ) )
+  p.value.ard = sapply(exx, function(i) 2 * exp(pnorm(abs(ard[[i]][1,] / sd(ard[[i]])), lower.tail = FALSE, log.p = TRUE) ) )
   
   hr_output_ = list(as.data.frame(val.hr),as.data.frame(ci.hr),as.data.frame(p.value))
   ard_output_ = list(as.data.frame(val.ard),as.data.frame(ci.ard),as.data.frame(p.value.ard))
